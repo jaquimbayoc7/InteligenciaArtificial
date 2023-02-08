@@ -1,0 +1,255 @@
+---
+title: "Regresion Lineal"
+author: "Julian Quimbayo"
+date: "2022-09-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Paso 1: Pipeline de Limpieza - Análisis EDA, Normalidad y Correlaciones
+```{r data}
+
+options(warn=-1)
+
+##Función para Carga Datos y limpieza
+
+cargaLimpieza <- function(ruta){
+  library(readr)
+  datos <- read_csv(ruta, locale = locale(encoding = "WINDOWS-1252"))
+}
+
+##Función para Identificar Datos NA - PROMEDIO DATOS NA
+datNACol <- function(df){
+  sum(is.na(df))
+  round(apply(is.na(df), 2, mean),2)
+}
+
+##Función para Graficar histogramas
+grafHist <- function(df, dfCol){
+  if (!is.numeric(dfCol)) {
+    stop("Debe ser un valor numérico")
+  }
+  library(ggplot2)
+  ggplot(df, aes(x=dfCol)) + geom_histogram(col='black', fill='green', alpha=0.4)
+  
+}
+
+##Función para dar nombres a columnas
+
+renColumnas <-function(df, vectorNom){
+  if (!is.character(vectorNom)) {
+    stop("Debe ser un valor de tipo texto o character")
+  }
+  colnames(df) <- vectorNom 
+  datos <- as.data.frame(df)
+  return(datos)
+}
+
+##Función para limpiar con Mediana -numéricos
+
+limpMediana <- function(dfCol){
+  if (!is.numeric(dfCol)) {
+    stop("Debe ser un valor numérico")
+  }
+  dfCol <- ifelse(is.na(dfCol), median(dfCol, na.rm = TRUE), dfCol)
+}
+
+##Particionar la data para normalizar
+partDf <- function(df, vectP){
+  df2 <-df[, -vectP]
+  return(df2)
+}
+
+##Normalización
+norm_minmax <- function(x){
+  (x- min(x)) /(max(x)-min(x))
+}
+
+#Agregar columnas depués de particionar
+agregCol <- function(dfuno, dfdos, colUno, colDos){
+  dfFinal <- cbind(dfuno, dfdos[,colUno:colDos])
+  return(dfFinal)
+}
+
+
+##Test de normalidad (Tarea)
+ShapiroFuncion <- function(DFcol, nom){
+  resultado<-shapiro.test(DFcol)
+  if (resultado$p.value < 0.05){
+    print(paste('la variable no es normal:',nom, 'Valor de P:', resultado$p.value))
+  }else{
+    print(paste('la variable es normal:',nom, 'Valor de P:', resultado$p.value))
+  }
+}
+
+##Gráfica de boxplot para outliers
+grafBox <- function(df, color){
+  g_caja<-boxplot(df, col=color, frame.plot=F)
+  return(g_caja)
+}
+
+##Correlaciones (Tarea)
+corVar <- function(df){
+  library(corrplot)
+  cor <-corrplot.mixed(cor(df, method = "spearman"), lower="ellipse", upper="number", order="hclust", )
+  return(cor)
+}
+
+
+##Revisión de tipo de datos general
+
+tipDatosGen <- function(df){
+  str(df)
+}
+
+##Revisión de tipo de datos por columna
+
+tipDatosCol <- function(dfCol){
+  str(dfCol)
+}
+
+##Exportar la datal limpia en formato .csv
+exporData<- function(df){
+  write.csv(df, 'dfLimpio.csv', row.names = FALSE)
+}
+
+exporDataTrain<- function(df){
+  write.csv(df, 'train.csv', row.names = FALSE)
+}
+
+exporDataTest<- function(df){
+  write.csv(df, 'test.csv', row.names = FALSE)
+}
+
+
+##Llamado a funciones
+#1. carga
+
+datos <- cargaLimpieza('dataAir.csv')
+
+#2. Revisión de datos NA
+datNACol(datos)
+
+#3. Renombrar Columnas
+datRen <- renColumnas(datos, c('Ozono','RadiacionR', 'Viento', 'Temp', 'Mes','Dia'))
+
+#4. Graficar Histogramas
+grafHist(datRen, datRen$Ozono)
+
+grafHist(datRen, datRen$RadiacionR)
+
+#5. Imputar datos con la mediana
+datRen$Ozono <- limpMediana(datRen$Ozono)
+
+datRen$RadiacionR <- limpMediana(datRen$RadiacionR)
+
+#6. Revisión de tipo de dato - general
+tipDatosGen(datRen)
+
+#7. Revisión de tipo de dato - Columna
+tipDatosGen(datRen$Ozono)
+
+#8. Particionar el dataframe
+dataPar <- partDf(datRen,c(5,6))
+
+#9. Normalización
+dfNorm <- norm_minmax(dataPar) 
+
+#10. Agregar columnas faltantes
+dfFinal <- agregCol(dfNorm, datRen, 5,6)
+
+#11. Test de normalidad para cada columna
+ShapiroFuncion(dfFinal$Ozono, 'Ozono')
+ShapiroFuncion(dfFinal$RadiacionR, 'Radiacion')
+ShapiroFuncion(dfFinal$Viento, 'Viento')
+ShapiroFuncion(dfFinal$Temp, 'Temperatura')
+ShapiroFuncion(dfFinal$Mes, 'Mes')
+ShapiroFuncion(dfFinal$Dia, 'Día')
+
+#12. Gráfica de caja para outliers
+grafBox(dfFinal, "green")
+
+#13. Correlaciones
+corre <- corVar(dfFinal)
+##Existe una correlación importante entre ozono y temperatura de 0.60, seguidamente
+#entre mes y temperatura con 0.42 y finalmente radiación con Ozono con un 0.30
+#Alta probabilidad de regresión lineal simple o multiple.
+
+#14. Power Predictive Score(PPS)
+library(ppsr)
+score_correlations(dfFinal)
+score_df(dfFinal)
+score_predictors(dfFinal, 'Temp')
+
+#14. Exportar data limpia en formato .csv
+exporData(dfFinal)
+```
+
+## Paso 2: Construcción del modelo
+```{r modelo}
+library(caTools)
+
+#make this example reproducible
+set.seed(1)
+
+#use 70% of dataset as training set and 30% as test set
+sample <- sample.split(dfFinal$Temp, SplitRatio = 0.7)
+train  <- subset(dfFinal, sample == TRUE)
+test   <- subset(dfFinal, sample == FALSE)
+
+exporDataTrain(train)
+
+exporDataTest(test)
+
+modelouno <- lm(Temp~., data = train)
+
+summary(modelouno)
+
+plot(modelouno)
+
+#Predicciones
+temp.predicciones <- predict(modelouno, test)
+
+temp.predicciones
+
+resultados <- cbind(temp.predicciones, test$Temp)
+
+colnames(resultados)<-c('Futuro','Actual')
+
+resultados<- as.data.frame(resultados)
+
+minvec <- sapply(datRen,min)
+maxvec <- sapply(datRen,max)
+denormalize <- function(x,minval,maxval) {
+    x*(maxval-minval) + minval
+}
+final <-as.data.frame(Map(denormalize,resultados,minvec,maxvec))
+
+final<- final[, -c(3,4,5,6)]
+
+final
+
+summary(final$Futuro)
+
+summary(final$Actual)
+
+```
+## Paso Métricas: Métricas.
+```{r metricas}
+library(modelr)
+metricas <-data.frame(
+  R2 = rsquare(modelouno, data = test),
+  RMSE = rmse(modelouno, data = test),
+  MAE = mae(modelouno, data = test)
+)
+
+metricas
+```
+
+```{r despliegue}
+saveRDS(modelouno, "modelouno.rds")
+```
+
